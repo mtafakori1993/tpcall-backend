@@ -15,6 +15,10 @@ variables:
   IMAGE: $CI_REGISTRY_IMAGE
   KUBE_IMAGE: alpine/k8s:1.36.4
   BUILDKIT_IMAGE: moby/buildkit:v0.23.0-rootless
+  # Outbound proxy (reachable only from the server network) for Docker Hub, Go modules, apk.
+  # GitLab / registry / cluster traffic bypasses it. Used by test and build jobs only.
+  PROXY_URL: http://130.185.123.6:3128
+  NO_PROXY_LIST: gitlab.tafakorpardazan.ir,.tafakorpardazan.ir,localhost,127.0.0.1,10.0.0.0/8,.svc,.cluster.local
 
 test:go:
   stage: test
@@ -22,6 +26,9 @@ test:go:
   image: golang:1.22-alpine
   variables:
     CGO_ENABLED: "0"
+    HTTP_PROXY: $PROXY_URL
+    HTTPS_PROXY: $PROXY_URL
+    NO_PROXY: $NO_PROXY_LIST
   script:
     - go vet ./...
     - go test ./...
@@ -33,6 +40,9 @@ build:image:
   variables:
     BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
     DOCKER_CONFIG: /tmp/.docker
+    HTTP_PROXY: $PROXY_URL
+    HTTPS_PROXY: $PROXY_URL
+    NO_PROXY: $NO_PROXY_LIST
   script:
     - mkdir -p "$DOCKER_CONFIG"
     - AUTH=$(printf 'gitlab-ci-token:%s' "$CI_JOB_TOKEN" | base64 | tr -d '\n')
@@ -40,10 +50,12 @@ build:image:
     - >
       buildctl-daemonless.sh build
       --frontend dockerfile.v0 --local context=. --local dockerfile=.
+      --opt build-arg:HTTP_PROXY=$PROXY_URL --opt build-arg:HTTPS_PROXY=$PROXY_URL --opt build-arg:NO_PROXY=$NO_PROXY_LIST
       --output type=image,name=$IMAGE:$CI_COMMIT_SHA,push=true
     - >
       buildctl-daemonless.sh build
       --frontend dockerfile.v0 --local context=. --local dockerfile=.
+      --opt build-arg:HTTP_PROXY=$PROXY_URL --opt build-arg:HTTPS_PROXY=$PROXY_URL --opt build-arg:NO_PROXY=$NO_PROXY_LIST
       --output type=image,name=$IMAGE:main,push=true
 
 deploy:production:
