@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+# CI replaces newTag with the immutable commit SHA before applying.
+images:
+  - name: tpcall-backend
+    newName: gitlab.tafakorpardazan.ir:5050/tafakor-pardazan/tpcall-backend
+    newTag: main

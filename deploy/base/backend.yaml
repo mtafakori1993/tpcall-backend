@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: tpcall
+  labels: {app: tpcall, component: backend, managed-by: gitlab-ci}
+spec:
+  selector: {app: tpcall, component: backend}
+  ports: [{name: http, port: 9090, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: tpcall
+  labels: {app: tpcall, component: backend, managed-by: gitlab-ci}
+spec:
+  replicas: 1   # presence/call state is held in-memory by the signaling hub: keep a single replica
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: tpcall, component: backend}
+  template:
+    metadata:
+      labels: {app: tpcall, component: backend}
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets: [{name: gitlab-registry}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: backend
+          image: tpcall-backend
+          ports: [{name: http, containerPort: 9090}]
+          envFrom:
+            - configMapRef: {name: tpcall-config}
+          env:
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: tpcall-secrets, key: DATABASE_URL}}
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: tpcall-secrets, key: JWT_SECRET}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          startupProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 20
+            timeoutSeconds: 5

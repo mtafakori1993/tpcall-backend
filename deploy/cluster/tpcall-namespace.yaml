@@ -1,0 +1,30 @@
+# Admin-applied (not applied by CI): namespace, CI deployer RBAC, quota.
+# Secrets (tpcall-secrets, gitlab-registry) are created by an admin and never committed.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tpcall
+  labels:
+    app: tpcall
+    managed-by: gitlab-ci
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: tpcall-deployer, namespace: tpcall}
+rules:
+  - {apiGroups: [apps], resources: [deployments, statefulsets, replicasets], verbs: [get, list, watch, create, update, patch]}
+  - {apiGroups: [apps], resources: [deployments/scale], verbs: [get, update, patch]}
+  - {apiGroups: [""], resources: [services, configmaps, persistentvolumeclaims, resourcequotas], verbs: [get, list, watch, create, update, patch]}
+  - {apiGroups: [""], resources: [pods, pods/log, events], verbs: [get, list, watch]}
+  - {apiGroups: [networking.k8s.io], resources: [ingresses, networkpolicies], verbs: [get, list, watch, create, update, patch]}
+  - {apiGroups: [policy], resources: [poddisruptionbudgets], verbs: [get, list, watch, create, update, patch]}
+  - {apiGroups: [traefik.io], resources: [middlewares], verbs: [get, list, watch, create, update, patch]}
+  # Deliberately NO access to secrets, namespaces or anything outside tpcall.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: ci-deploy-tpcall, namespace: tpcall}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: tpcall-deployer}
+subjects: [{kind: ServiceAccount, name: ci-deploy, namespace: ci}]

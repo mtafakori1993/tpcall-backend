@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: tpcall
+  labels: {app: tpcall, component: postgres, managed-by: gitlab-ci}
+spec:
+  clusterIP: None
+  selector: {app: tpcall, component: postgres}
+  ports: [{name: postgres, port: 5432}]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: tpcall
+  labels: {app: tpcall, component: postgres, managed-by: gitlab-ci}
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: tpcall, component: postgres}
+  template:
+    metadata:
+      labels: {app: tpcall, component: postgres}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports: [{name: postgres, containerPort: 5432}]
+          env:
+            - {name: POSTGRES_USER, value: tpcall}
+            - {name: POSTGRES_DB, value: tpcall}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: tpcall-secrets, key: POSTGRES_PASSWORD}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          startupProbe:
+            exec: {command: [pg_isready, -U, tpcall, -d, tpcall]}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec: {command: [pg_isready, -U, tpcall, -d, tpcall]}
+            periodSeconds: 10
+          livenessProbe:
+            exec: {command: [pg_isready, -U, tpcall, -d, tpcall]}
+            periodSeconds: 20
+            timeoutSeconds: 5
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql/data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 5Gi}}

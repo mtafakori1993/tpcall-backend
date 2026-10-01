@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tpcall-config
+  namespace: tpcall
+  labels: {app: tpcall, managed-by: gitlab-ci}
+data:
+  HTTP_HOST: "0.0.0.0"
+  HTTP_PORT: "9090"
+  PUBLIC_BASE_URL: "https://tpcallapi.tafakorpardazan.ir"
+  JWT_EXPIRATION: "24h"
+  RING_TIMEOUT: "30s"
+  LOG_LEVEL: "info"
+  CORS_ORIGINS: "*"
+  ICE_SERVERS: "stun:stun.l.google.com:19302"

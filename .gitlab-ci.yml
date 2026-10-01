@@ -1,0 +1,69 @@
+# Production pipeline: test -> build (build + push image) -> deploy. Mirrors the tpsite pipeline.
+# Runs ONLY on the default branch. No secrets live in this file.
+# The deploy job runs in a pod whose ServiceAccount (ci/ci-deploy) can manage the "tpcall" namespace.
+
+stages: [test, build, deploy]
+
+workflow:
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+default:
+  interruptible: true
+
+variables:
+  IMAGE: $CI_REGISTRY_IMAGE
+  KUBE_IMAGE: alpine/k8s:1.36.4
+  BUILDKIT_IMAGE: moby/buildkit:v0.23.0-rootless
+
+test:go:
+  stage: test
+  tags: [build]
+  image: golang:1.22-alpine
+  variables:
+    CGO_ENABLED: "0"
+  script:
+    - go vet ./...
+    - go test ./...
+
+build:image:
+  stage: build
+  tags: [build]
+  image: {name: "$BUILDKIT_IMAGE", entrypoint: [""]}
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
+    DOCKER_CONFIG: /tmp/.docker
+  script:
+    - mkdir -p "$DOCKER_CONFIG"
+    - AUTH=$(printf 'gitlab-ci-token:%s' "$CI_JOB_TOKEN" | base64 | tr -d '\n')
+    - printf '{"auths":{"%s":{"auth":"%s"}}}' "$CI_REGISTRY" "$AUTH" > "$DOCKER_CONFIG/config.json"
+    - >
+      buildctl-daemonless.sh build
+      --frontend dockerfile.v0 --local context=. --local dockerfile=.
+      --output type=image,name=$IMAGE:$CI_COMMIT_SHA,push=true
+    - >
+      buildctl-daemonless.sh build
+      --frontend dockerfile.v0 --local context=. --local dockerfile=.
+      --output type=image,name=$IMAGE:main,push=true
+
+deploy:production:
+  stage: deploy
+  tags: [deploy]
+  image: {name: "$KUBE_IMAGE", entrypoint: [""]}
+  resource_group: production
+  interruptible: false
+  environment: {name: production, url: https://tpcallapi.tafakorpardazan.ir}
+  script:
+    - cd deploy/overlays/production
+    - 'sed -i "s|newTag:.*|newTag: $CI_COMMIT_SHA|" kustomization.yaml'
+    - kubectl kustomize . > /tmp/rendered.yaml
+    - grep -q "kind: Deployment" /tmp/rendered.yaml
+    - kubectl apply -f /tmp/rendered.yaml
+    - |
+      if ! kubectl -n tpcall rollout status deploy/backend --timeout=300s; then
+        echo "Rollout failed - rolling back to the previous revision"
+        kubectl -n tpcall rollout undo deploy/backend
+        kubectl -n tpcall rollout status deploy/backend --timeout=180s || true
+        exit 1
+      fi
+    - kubectl -n tpcall get deploy,pods -l app=tpcall
