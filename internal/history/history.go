@@ -59,6 +59,19 @@ type Store interface {
 	// ListForUser returns the history of calls the user was caller or callee
 	// of, newest first. hasMore reports whether another page exists.
 	ListForUser(ctx context.Context, userID uuid.UUID, limit, offset int) ([]Record, bool, error)
+	// ListAll returns every call (admin view), newest first, with names resolved.
+	ListAll(ctx context.Context, limit, offset int) ([]Record, bool, error)
+	// Stats aggregates call counters; "today" counts calls started at or after since.
+	Stats(ctx context.Context, since time.Time) (Stats, error)
+}
+
+// Stats is the aggregate used by the admin dashboard.
+type Stats struct {
+	CallsTotal       int64
+	CallsSince       int64
+	Answered         int64
+	TalkSecondsTotal int64
+	ByReason         map[string]int64
 }
 
 // InMemoryStore is a thread-safe Store used by tests.
@@ -195,4 +208,47 @@ func sortRecords(rows []Record) {
 			}
 		}
 	}
+}
+
+func (s *InMemoryStore) ListAll(ctx context.Context, limit, offset int) ([]Record, bool, error) {
+	s.mu.RLock()
+	all := make([]Record, len(s.rows))
+	copy(all, s.rows)
+	s.mu.RUnlock()
+	sortRecords(all)
+
+	if s.users != nil {
+		for i := range all {
+			if c, err := s.users.GetUserByID(ctx, all[i].CallerUserID); err == nil {
+				all[i].CallerName, all[i].CallerExtension = c.Name, c.Extension
+			}
+			if c, err := s.users.GetUserByID(ctx, all[i].CalleeUserID); err == nil {
+				all[i].CalleeName, all[i].CalleeExtension = c.Name, c.Extension
+			}
+		}
+	}
+	hasMore := offset+limit < len(all)
+	start := min(offset, len(all))
+	end := min(start+limit, len(all))
+	return all[start:end], hasMore, nil
+}
+
+func (s *InMemoryStore) Stats(ctx context.Context, since time.Time) (Stats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st := Stats{ByReason: map[string]int64{}}
+	for _, r := range s.rows {
+		st.CallsTotal++
+		if !r.StartedAt.Before(since) {
+			st.CallsSince++
+		}
+		if r.AnsweredAt != nil {
+			st.Answered++
+			if r.EndedAt != nil {
+				st.TalkSecondsTotal += int64(r.EndedAt.Sub(*r.AnsweredAt).Seconds())
+			}
+		}
+		st.ByReason[r.EndReason]++
+	}
+	return st, nil
 }

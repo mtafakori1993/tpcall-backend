@@ -85,3 +85,41 @@ func (s *InMemoryStore) UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 	s.byExt[u.Extension] = u
 	return nil
 }
+
+func (s *InMemoryStore) UpdateName(ctx context.Context, id uuid.UUID, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.byID[id]
+	if !ok {
+		return ErrUserNotFound
+	}
+	u.Name = name
+	s.byID[id] = u
+	s.byExt[u.Extension] = u
+	return nil
+}
+
+func (s *InMemoryStore) UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.byID[id]
+	if !ok {
+		return ErrUserNotFound
+	}
+	u.PasswordHash = passwordHash
+	s.byID[id] = u
+	s.byExt[u.Extension] = u
+	return nil
+}
+
+func (s *InMemoryStore) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u, ok := s.byID[id]
+	if !ok {
+		return ErrUserNotFound
+	}
+	delete(s.byID, id)
+	delete(s.byExt, u.Extension)
+	return nil
+}

@@ -46,7 +46,7 @@ func (s *Server) Routes() http.Handler {
 	r.Use(middleware.Recoverer(s.logger))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: s.cfg.CORSOrigins,
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Authorization", "Content-Type", "X-Request-ID"},
 		ExposedHeaders: []string{"X-Request-ID"},
 		MaxAge:         300,
@@ -65,6 +65,19 @@ func (s *Server) Routes() http.Handler {
 			r.Get("/users/{extension}", s.handleGetUser)
 			r.Get("/webrtc/config", s.handleWebRTCConfig)
 			r.Get("/calls", s.handleListCalls)
+
+			// Dashboard API: only extensions listed in ADMIN_EXTENSIONS.
+			r.Get("/admin/me", s.handleAdminMe)
+			r.Group(func(r chi.Router) {
+				r.Use(s.requireAdmin)
+				r.Get("/admin/stats", s.handleAdminStats)
+				r.Get("/admin/users", s.handleAdminListUsers)
+				r.Post("/admin/users", s.handleAdminCreateUser)
+				r.Patch("/admin/users/{extension}", s.handleAdminUpdateUser)
+				r.Post("/admin/users/{extension}/password", s.handleAdminResetPassword)
+				r.Delete("/admin/users/{extension}", s.handleAdminDeleteUser)
+				r.Get("/admin/calls", s.handleAdminListCalls)
+			})
 		})
 
 		// The WebSocket endpoint performs its own authentication (header or

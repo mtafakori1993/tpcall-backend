@@ -101,6 +101,15 @@ kubectl -n tpcall rollout restart deploy/backend
 5. DNS: `tpcallapi.tafakorpardazan.ir` → `193.151.152.230` (server public IP).
 6. Push to `main`; the first pipeline deploys everything.
 
+## Admin API (dashboard)
+
+`/api/v1/admin/*` (stats, users CRUD + password reset, all calls) is served to the
+[tpcall-dashboard](https://gitlab.tafakorpardazan.ir/tafakor-pardazan/tpcall-dashboard) at
+`https://tpcalldashboard.tafakorpardazan.ir`. Access = a normal JWT whose extension is listed in
+`ADMIN_EXTENSIONS` (ConfigMap `tpcall-config`, currently `101`). `CORS_ORIGINS` is limited to the
+dashboard origin (mobile apps are not affected by CORS). Deleting a user also deletes their call
+history and closes their live session; admin actions are logged as `admin_action`.
+
 ## TURN relay (coturn) for WebRTC calls
 
 The backend never carries call audio; phones connect peer-to-peer. Phones on different networks

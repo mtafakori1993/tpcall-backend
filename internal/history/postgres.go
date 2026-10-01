@@ -100,3 +100,75 @@ func (s *PostgresStore) ListForUser(ctx context.Context, userID uuid.UUID, limit
 	}
 	return out, hasMore, nil
 }
+
+// ListAll returns all calls newest first (admin view) with a single JOIN.
+func (s *PostgresStore) ListAll(ctx context.Context, limit, offset int) ([]Record, bool, error) {
+	rows, err := s.pool.Query(ctx,
+		`SELECT ch.id, ch.call_id, ch.caller_user_id, ch.callee_user_id,
+		        ch.started_at, ch.answered_at, ch.ended_at, ch.end_reason,
+		        caller.name, caller.extension,
+		        callee.name, callee.extension
+		 FROM call_history ch
+		 JOIN users caller ON caller.id = ch.caller_user_id
+		 JOIN users callee ON callee.id = ch.callee_user_id
+		 ORDER BY ch.started_at DESC, ch.call_id DESC
+		 LIMIT $1 OFFSET $2`,
+		limit+1, offset,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	var out []Record
+	for rows.Next() {
+		var r Record
+		if err := rows.Scan(
+			&r.ID, &r.CallID, &r.CallerUserID, &r.CalleeUserID,
+			&r.StartedAt, &r.AnsweredAt, &r.EndedAt, &r.EndReason,
+			&r.CallerName, &r.CallerExtension,
+			&r.CalleeName, &r.CalleeExtension,
+		); err != nil {
+			return nil, false, err
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	hasMore := len(out) > limit
+	if hasMore {
+		out = out[:limit]
+	}
+	return out, hasMore, nil
+}
+
+// Stats aggregates counters in two small queries.
+func (s *PostgresStore) Stats(ctx context.Context, since time.Time) (Stats, error) {
+	st := Stats{ByReason: map[string]int64{}}
+	err := s.pool.QueryRow(ctx,
+		`SELECT COUNT(*),
+		        COUNT(*) FILTER (WHERE started_at >= $1),
+		        COUNT(answered_at),
+		        COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - answered_at)))
+		                 FILTER (WHERE answered_at IS NOT NULL AND ended_at IS NOT NULL), 0)::bigint
+		 FROM call_history`, since,
+	).Scan(&st.CallsTotal, &st.CallsSince, &st.Answered, &st.TalkSecondsTotal)
+	if err != nil {
+		return Stats{}, err
+	}
+	rows, err := s.pool.Query(ctx, `SELECT end_reason, COUNT(*) FROM call_history GROUP BY end_reason`)
+	if err != nil {
+		return Stats{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var reason string
+		var n int64
+		if err := rows.Scan(&reason, &n); err != nil {
+			return Stats{}, err
+		}
+		st.ByReason[reason] = n
+	}
+	return st, rows.Err()
+}

@@ -37,9 +37,10 @@ type testServer struct {
 func newTestServer(t *testing.T) *testServer {
 	t.Helper()
 	cfg := &config.Config{
-		CORSOrigins: []string{"*"},
-		JWTSecret:   string(testJWTSecret),
-		ICEServers:  nil,
+		CORSOrigins:     []string{"*"},
+		JWTSecret:       string(testJWTSecret),
+		ICEServers:      nil,
+		AdminExtensions: []string{"101"},
 	}
 	store := users.NewInMemoryStore()
 	callHistory := history.NewInMemoryStore().WithUsers(store)

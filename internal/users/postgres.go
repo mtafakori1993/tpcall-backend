@@ -44,6 +44,12 @@ type Store interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	ListUsers(ctx context.Context) ([]User, error)
 	UpdateLastLogin(ctx context.Context, id uuid.UUID) error
+	// UpdateName changes the display name of a user.
+	UpdateName(ctx context.Context, id uuid.UUID, name string) error
+	// UpdatePasswordHash replaces the stored password hash of a user.
+	UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error
+	// DeleteUser removes a user together with the call history they took part in.
+	DeleteUser(ctx context.Context, id uuid.UUID) error
 }
 
 const errUniqueViolation = "23505"
@@ -129,4 +135,51 @@ func (s *PostgresStore) UpdateLastLogin(ctx context.Context, id uuid.UUID) error
 	_, err := s.pool.Exec(ctx,
 		`UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`, id)
 	return err
+}
+
+func (s *PostgresStore) UpdateName(ctx context.Context, id uuid.UUID, name string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET name = $2, updated_at = NOW() WHERE id = $1`, id, name)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) UpdatePasswordHash(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	tag, err := s.pool.Exec(ctx,
+		`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE id = $1`, id, passwordHash)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return nil
+}
+
+// DeleteUser removes the user and every call_history row they were part of
+// (the foreign keys have no cascade) in one transaction.
+func (s *PostgresStore) DeleteUser(ctx context.Context, id uuid.UUID) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM call_history WHERE caller_user_id = $1 OR callee_user_id = $1`, id); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrUserNotFound
+	}
+	return tx.Commit(ctx)
 }

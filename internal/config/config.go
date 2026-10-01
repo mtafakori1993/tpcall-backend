@@ -11,20 +11,21 @@ import (
 
 // Config holds all runtime configuration for the backend.
 type Config struct {
-	HTTPHost      string
-	HTTPPort      string
-	PublicBaseURL string
-	DatabaseURL   string
-	JWTSecret     string
-	JWTExpiration time.Duration
-	RingTimeout   time.Duration
-	LogLevel      string
-	CORSOrigins   []string
-	ICEServers    []string
-	TURNURLs      []string
-	TURNSecret    string
-	TURNTTL       time.Duration
-	MigrationsDir string
+	HTTPHost        string
+	HTTPPort        string
+	PublicBaseURL   string
+	DatabaseURL     string
+	JWTSecret       string
+	JWTExpiration   time.Duration
+	RingTimeout     time.Duration
+	LogLevel        string
+	CORSOrigins     []string
+	ICEServers      []string
+	TURNURLs        []string
+	AdminExtensions []string
+	TURNSecret      string
+	TURNTTL         time.Duration
+	MigrationsDir   string
 }
 
 // Load reads configuration from environment variables.
@@ -45,20 +46,21 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		HTTPHost:      envStr("HTTP_HOST", "0.0.0.0"),
-		HTTPPort:      envStr("HTTP_PORT", "9090"),
-		PublicBaseURL: envStr("PUBLIC_BASE_URL", "http://192.168.1.200:9090"),
-		DatabaseURL:   os.Getenv("DATABASE_URL"),
-		JWTSecret:     os.Getenv("JWT_SECRET"),
-		JWTExpiration: exp,
-		RingTimeout:   ring,
-		LogLevel:      envStr("LOG_LEVEL", "info"),
-		CORSOrigins:   csvEnv("CORS_ORIGINS", "*"),
-		ICEServers:    csvEnv("ICE_SERVERS", ""),
-		TURNURLs:      csvEnv("TURN_URLS", ""),
-		TURNSecret:    os.Getenv("TURN_SECRET"),
-		TURNTTL:       turnTTL,
-		MigrationsDir: envStr("MIGRATIONS_DIR", "./migrations"),
+		HTTPHost:        envStr("HTTP_HOST", "0.0.0.0"),
+		HTTPPort:        envStr("HTTP_PORT", "9090"),
+		PublicBaseURL:   envStr("PUBLIC_BASE_URL", "http://192.168.1.200:9090"),
+		DatabaseURL:     os.Getenv("DATABASE_URL"),
+		JWTSecret:       os.Getenv("JWT_SECRET"),
+		JWTExpiration:   exp,
+		RingTimeout:     ring,
+		LogLevel:        envStr("LOG_LEVEL", "info"),
+		CORSOrigins:     csvEnv("CORS_ORIGINS", "*"),
+		ICEServers:      csvEnv("ICE_SERVERS", ""),
+		TURNURLs:        csvEnv("TURN_URLS", ""),
+		AdminExtensions: csvEnv("ADMIN_EXTENSIONS", ""),
+		TURNSecret:      os.Getenv("TURN_SECRET"),
+		TURNTTL:         turnTTL,
+		MigrationsDir:   envStr("MIGRATIONS_DIR", "./migrations"),
 	}
 
 	if cfg.DatabaseURL == "" {

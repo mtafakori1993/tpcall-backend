@@ -590,3 +590,20 @@ func (h *Hub) endReasonForHangup(call *calls.Call, hangerExt string) string {
 	}
 	return history.EndReasonCalleeCancelled
 }
+
+// OnlineCount returns the number of extensions with a live WebSocket session.
+func (h *Hub) OnlineCount() int {
+	return len(h.presence.Clients())
+}
+
+// Disconnect closes the live session of an extension (used when an admin removes
+// a user or resets their password). It reports whether a session existed.
+func (h *Hub) Disconnect(extension string) bool {
+	c, ok := h.presence.Get(extension)
+	if !ok {
+		return false
+	}
+	h.sendError(c, "", "session_closed", "session closed by an administrator")
+	c.close()
+	return true
+}
