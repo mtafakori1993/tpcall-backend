@@ -47,6 +47,7 @@ spec:
             - >-
               exec turnserver
               --listening-port=3478
+              --listening-ip=193.151.152.230 --relay-ip=193.151.152.230 --external-ip=193.151.152.230
               --realm=tpcallapi.tafakorpardazan.ir
               --use-auth-secret --static-auth-secret="$TURN_SECRET"
               --min-port=49152 --max-port=49251
