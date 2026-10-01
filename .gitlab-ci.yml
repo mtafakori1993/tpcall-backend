@@ -69,7 +69,7 @@ deploy:production:
     - cd deploy/overlays/production
     - 'sed -i "s|newTag:.*|newTag: $CI_COMMIT_SHA|" kustomization.yaml'
     - kubectl kustomize . > /tmp/rendered.yaml
-    - grep -q "kind: Deployment" /tmp/rendered.yaml
+    - 'grep -q "kind: Deployment" /tmp/rendered.yaml'
     - kubectl apply -f /tmp/rendered.yaml
     - |
       if ! kubectl -n tpcall rollout status deploy/backend --timeout=300s; then
