@@ -61,10 +61,10 @@ server network) for Docker Hub, Go modules and apk. GitLab/registry/cluster addr
 
 Non-secret (ConfigMap `tpcall-config`, from `deploy/base/configmap.yaml`):
 `HTTP_HOST`, `HTTP_PORT=9090`, `PUBLIC_BASE_URL=https://tpcallapi.tafakorpardazan.ir`,
-`JWT_EXPIRATION`, `RING_TIMEOUT`, `LOG_LEVEL`, `CORS_ORIGINS`, `ICE_SERVERS`.
+`JWT_EXPIRATION`, `RING_TIMEOUT`, `LOG_LEVEL`, `CORS_ORIGINS`, `ICE_SERVERS`, `TURN_URLS`, `TURN_TTL`.
 
 Secret (`tpcall-secrets`, created by an admin from the local `.env` values — never committed):
-`POSTGRES_PASSWORD`, `JWT_SECRET`, `DATABASE_URL`.
+`POSTGRES_PASSWORD`, `JWT_SECRET`, `DATABASE_URL`, `TURN_SECRET`.
 
 To change a non-secret value: edit `deploy/base/configmap.yaml`, push to `main`.
 (Changing a ConfigMap does not restart pods by itself — run `kubectl -n tpcall rollout restart deploy/backend`.)
@@ -101,6 +101,40 @@ kubectl -n tpcall rollout restart deploy/backend
 5. DNS: `tpcallapi.tafakorpardazan.ir` → `193.151.152.230` (server public IP).
 6. Push to `main`; the first pipeline deploys everything.
 
+## TURN relay (coturn) for WebRTC calls
+
+The backend never carries call audio; phones connect peer-to-peer. Phones on different networks
+(mobile data, strict NAT) need STUN, and often a TURN relay. This is provided by **coturn**:
+
+| Item | Value |
+|---|---|
+| Namespace / Deployment | `tpcall-turn` / `coturn` (`coturn/coturn:4.6.3`), `hostNetwork: true` on the node's public IP `193.151.152.230` |
+| Ports | `3478/udp`, `3478/tcp`, relay range `49152-49251/udp` |
+| Firewall (ufw, interface `ens192`) | the three rules above, comment "TURN" |
+| Auth | shared secret (TURN REST API / `use-auth-secret`). Secret `coturn-secrets` (ns `tpcall-turn`) and `TURN_SECRET` in `tpcall-secrets` (ns `tpcall`) **must be identical** |
+| Safety | relays to private/loopback/link-local ranges are denied (`--denied-peer-ip`), per-user and total quotas set |
+| Manifest | `deploy/cluster/coturn.yaml` — admin-applied, **not** deployed by CI (own namespace with Pod Security `privileged`, required for `hostNetwork`) |
+
+The backend (`GET /api/v1/webrtc/config`, JWT required) returns:
+`iceServers: [ {urls: STUN...}, {urls: TURN..., username: "<expiry>:<extension>", credential: <HMAC-SHA1>} ]`.
+Credentials expire after `TURN_TTL` (default 24h), so no static TURN password is shipped in the app.
+Clients **must** fetch this endpoint after login and pass the result to their `RTCPeerConnection`.
+
+Settings: `ICE_SERVERS` (STUN), `TURN_URLS`, `TURN_TTL` in the ConfigMap; `TURN_SECRET` in `tpcall-secrets`.
+
+Rotate the TURN secret (server, root):
+
+```bash
+S=$(openssl rand -hex 32)
+kubectl -n tpcall-turn create secret generic coturn-secrets --from-literal=TURN_SECRET="$S" --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n tpcall patch secret tpcall-secrets --type merge -p "{\"stringData\":{\"TURN_SECRET\":\"$S\"}}"
+kubectl -n tpcall-turn rollout restart deploy/coturn
+kubectl -n tpcall rollout restart deploy/backend
+```
+
+Check from outside: send a STUN binding request to `193.151.152.230:3478/udp`, or
+`turnutils_uclient` with a generated credential. coturn logs: `kubectl -n tpcall-turn logs deploy/coturn`.
+
 ## Operations
 
 ```bash
@@ -134,4 +168,4 @@ kubectl -n tpcall exec postgres-0 -- pg_dump -U tpcall tpcall | gzip > tpcall-$(
 - Single backend replica and single Postgres instance (no HA).
 - No automated database backups.
 - `CORS_ORIGINS` is `*`; restrict it once client origins are known.
-- `ICE_SERVERS` is empty (no STUN/TURN configured) — WebRTC calls across NATs may need one.
+- One TURN server on the same host as everything else (no redundancy); relay range allows ~100 concurrent relayed streams.
