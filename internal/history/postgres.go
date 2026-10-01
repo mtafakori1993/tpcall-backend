@@ -42,13 +42,14 @@ func (s *PostgresStore) MarkAnswered(ctx context.Context, callID uuid.UUID, answ
 }
 
 // MarkEnded is idempotent: the first end event sets ended_at and end_reason,
-// and any racing/repeated end processing is a no-op.
+// and any racing/repeated end processing is a no-op. end_reason cannot be
+// guarded with COALESCE: the column is NOT NULL and defaults to no_answer when
+// the ringing row is created, so "first end event wins" is keyed on ended_at.
 func (s *PostgresStore) MarkEnded(ctx context.Context, callID uuid.UUID, endedAt time.Time, endReason string) error {
 	_, err := s.pool.Exec(ctx,
 		`UPDATE call_history
-		 SET ended_at = COALESCE(ended_at, $2),
-		     end_reason = COALESCE(end_reason, $3)
-		 WHERE call_id = $1`,
+		 SET ended_at = $2, end_reason = $3
+		 WHERE call_id = $1 AND ended_at IS NULL`,
 		callID, endedAt, endReason,
 	)
 	return err
