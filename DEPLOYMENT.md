@@ -1,6 +1,6 @@
 # TPCall Backend — Deployment
 
-Production: **https://tpcallapi.tafakorpardazan.ir** (health: `/health`, WebSocket: `/ws`)
+Production: **https://tpcallapi.tafakorpardazan.ir** (health: `/health`, WebSocket: `/api/v1/ws`)
 
 Runs on the k3s cluster at `10.20.0.1` in the `tpcall` namespace, deployed by GitLab CI
 (`gitlab.tafakorpardazan.ir/tafakor-pardazan/tpcall-backend`). The setup mirrors the `tpsite` project.
