@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tpcall
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tpcall_password}
+      POSTGRES_DB: tpcall
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tpcall -d tpcall"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    # Exposed only on localhost for development convenience.
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  backend:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HTTP_HOST: ${HTTP_HOST:-0.0.0.0}
+      HTTP_PORT: ${HTTP_PORT:-9090}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://192.168.1.200:9090}
+      DATABASE_URL: postgres://tpcall:${POSTGRES_PASSWORD:-tpcall_password}@postgres:5432/tpcall?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env or environment}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
+      RING_TIMEOUT: ${RING_TIMEOUT:-30s}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ICE_SERVERS: ${ICE_SERVERS:-}
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
