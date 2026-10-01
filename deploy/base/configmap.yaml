@@ -13,3 +13,5 @@ data:
   LOG_LEVEL: "info"
   CORS_ORIGINS: "*"
   ICE_SERVERS: "stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302"
+  TURN_URLS: "turn:tpcallapi.tafakorpardazan.ir:3478?transport=udp,turn:tpcallapi.tafakorpardazan.ir:3478?transport=tcp"
+  TURN_TTL: "24h"

@@ -21,6 +21,9 @@ type Config struct {
 	LogLevel      string
 	CORSOrigins   []string
 	ICEServers    []string
+	TURNURLs      []string
+	TURNSecret    string
+	TURNTTL       time.Duration
 	MigrationsDir string
 }
 
@@ -36,6 +39,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	turnTTL, err := durationEnv("TURN_TTL", 24*time.Hour)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		HTTPHost:      envStr("HTTP_HOST", "0.0.0.0"),
 		HTTPPort:      envStr("HTTP_PORT", "9090"),
@@ -47,6 +55,9 @@ func Load() (*Config, error) {
 		LogLevel:      envStr("LOG_LEVEL", "info"),
 		CORSOrigins:   csvEnv("CORS_ORIGINS", "*"),
 		ICEServers:    csvEnv("ICE_SERVERS", ""),
+		TURNURLs:      csvEnv("TURN_URLS", ""),
+		TURNSecret:    os.Getenv("TURN_SECRET"),
+		TURNTTL:       turnTTL,
 		MigrationsDir: envStr("MIGRATIONS_DIR", "./migrations"),
 	}
 
@@ -61,6 +72,12 @@ func Load() (*Config, error) {
 	}
 	if cfg.JWTExpiration <= 0 {
 		return nil, fmt.Errorf("JWT_EXPIRATION must be positive, got %s", cfg.JWTExpiration)
+	}
+	if len(cfg.TURNURLs) > 0 && cfg.TURNSecret == "" {
+		return nil, fmt.Errorf("TURN_SECRET is required when TURN_URLS is set")
+	}
+	if cfg.TURNTTL <= 0 {
+		return nil, fmt.Errorf("TURN_TTL must be positive, got %s", cfg.TURNTTL)
 	}
 	return cfg, nil
 }

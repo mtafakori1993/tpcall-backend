@@ -41,6 +41,8 @@ spec:
               valueFrom: {secretKeyRef: {name: tpcall-secrets, key: DATABASE_URL}}
             - name: JWT_SECRET
               valueFrom: {secretKeyRef: {name: tpcall-secrets, key: JWT_SECRET}}
+            - name: TURN_SECRET
+              valueFrom: {secretKeyRef: {name: tpcall-secrets, key: TURN_SECRET}}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

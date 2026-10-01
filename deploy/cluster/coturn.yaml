@@ -1,0 +1,77 @@
+# Admin-applied (not by CI): TURN relay for WebRTC calls.
+# Runs with hostNetwork on the node's public IP, so it lives in its own namespace
+# (hostNetwork is not allowed by the "baseline" policy used in tpcall).
+# Secret "coturn-secrets" (key TURN_SECRET) is created by an admin and must equal
+# TURN_SECRET in tpcall/tpcall-secrets. Firewall: allow 3478/udp, 3478/tcp, 49152-49251/udp.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tpcall-turn
+  labels:
+    app: tpcall-turn
+    managed-by: admin
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn
+  namespace: tpcall-turn
+  labels: {app: tpcall-turn, component: coturn}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # hostNetwork ports: old pod must stop before the new one starts
+  selector:
+    matchLabels: {app: tpcall-turn, component: coturn}
+  template:
+    metadata:
+      labels: {app: tpcall-turn, component: coturn}
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: coturn
+          image: coturn/coturn:4.6.3
+          env:
+            - name: TURN_SECRET
+              valueFrom: {secretKeyRef: {name: coturn-secrets, key: TURN_SECRET}}
+          command:
+            - sh
+            - -c
+            - >-
+              exec turnserver
+              --listening-port=3478
+              --realm=tpcallapi.tafakorpardazan.ir
+              --use-auth-secret --static-auth-secret="$TURN_SECRET"
+              --min-port=49152 --max-port=49251
+              --fingerprint --no-tls --no-dtls --no-cli --no-multicast-peers
+              --stale-nonce=600 --user-quota=10 --total-quota=100
+              --denied-peer-ip=0.0.0.0-0.255.255.255
+              --denied-peer-ip=10.0.0.0-10.255.255.255
+              --denied-peer-ip=100.64.0.0-100.127.255.255
+              --denied-peer-ip=127.0.0.0-127.255.255.255
+              --denied-peer-ip=169.254.0.0-169.254.255.255
+              --denied-peer-ip=172.16.0.0-172.31.255.255
+              --denied-peer-ip=192.168.0.0-192.168.255.255
+              --log-file=stdout --simple-log
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            # turnserver carries file capabilities; exec fails if NET_BIND_SERVICE is not in the bounding set
+            capabilities: {drop: [ALL], add: [NET_BIND_SERVICE]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: "1", memory: 256Mi}
+          readinessProbe:
+            tcpSocket: {port: 3478}
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket: {port: 3478}
+            periodSeconds: 20
+            failureThreshold: 3

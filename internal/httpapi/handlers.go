@@ -1,10 +1,15 @@
 package httpapi
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
@@ -184,11 +189,32 @@ func (s *Server) handleListUsers(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleWebRTCConfig(w http.ResponseWriter, r *http.Request) {
-	if len(s.cfg.ICEServers) == 0 {
-		writeJSON(w, http.StatusOK, map[string]any{"iceServers": []any{}})
-		return
+	servers := []map[string]any{}
+	if len(s.cfg.ICEServers) > 0 {
+		servers = append(servers, map[string]any{"urls": s.cfg.ICEServers})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"iceServers": []map[string]any{{"urls": s.cfg.ICEServers}},
-	})
+	if len(s.cfg.TURNURLs) > 0 {
+		au, ok := middleware.UserFromContext(r.Context())
+		if !ok {
+			httpx.WriteError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			return
+		}
+		username, credential := turnCredentials(s.cfg.TURNSecret, au.Extension, s.cfg.TURNTTL, time.Now())
+		servers = append(servers, map[string]any{
+			"urls":       s.cfg.TURNURLs,
+			"username":   username,
+			"credential": credential,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"iceServers": servers})
+}
+
+// turnCredentials builds short-lived credentials for a coturn server running with
+// use-auth-secret (TURN REST API): username is "<expiry unix>:<extension>" and the
+// credential is base64(HMAC-SHA1(secret, username)).
+func turnCredentials(secret, extension string, ttl time.Duration, now time.Time) (string, string) {
+	username := fmt.Sprintf("%d:%s", now.Add(ttl).Unix(), extension)
+	mac := hmac.New(sha1.New, []byte(secret))
+	mac.Write([]byte(username))
+	return username, base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
